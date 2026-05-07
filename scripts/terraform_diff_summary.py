@@ -11,8 +11,28 @@ PathParts = tuple[str, ...]
 MISSING = object()
 
 
-def strip_version_tag(value: Any, version_tag_name: str) -> Any:
-    """Return value with the configured version tag removed from tag maps."""
+def split_csv(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def env_bool(name: str, default: bool) -> bool:
+    raw_value = os.environ.get(name)
+    if raw_value is None or raw_value == "":
+        return default
+    return raw_value.lower() in {"1", "true", "yes", "y", "on"}
+
+
+def ignored_tag_names_from_env() -> list[str]:
+    ignored_tag_names = split_csv(os.environ.get("IGNORED_TAG_NAMES"))
+    if ignored_tag_names:
+        return ignored_tag_names
+    return split_csv(os.environ.get("VERSION_TAG_NAME")) or ["Version"]
+
+
+def strip_ignored_tags(value: Any, ignored_tag_names: set[str]) -> Any:
+    """Return value with ignored tag keys removed from tag maps."""
     if isinstance(value, dict):
         stripped: dict[str, Any] = {}
         for key, child in value.items():
@@ -20,16 +40,21 @@ def strip_version_tag(value: Any, version_tag_name: str) -> Any:
                 stripped[key] = {
                     tag_key: tag_value
                     for tag_key, tag_value in child.items()
-                    if tag_key != version_tag_name
+                    if tag_key not in ignored_tag_names
                 }
             else:
-                stripped[key] = strip_version_tag(child, version_tag_name)
+                stripped[key] = strip_ignored_tags(child, ignored_tag_names)
         return stripped
 
     if isinstance(value, list):
-        return [strip_version_tag(item, version_tag_name) for item in value]
+        return [strip_ignored_tags(item, ignored_tag_names) for item in value]
 
     return value
+
+
+def strip_version_tag(value: Any, version_tag_name: str) -> Any:
+    """Return value with the configured version tag removed from tag maps."""
+    return strip_ignored_tags(value, {version_tag_name})
 
 
 def leaf_paths(value: Any, prefix: PathParts = ()) -> set[PathParts]:
@@ -108,6 +133,11 @@ def is_actionable(change: dict[str, Any]) -> bool:
 
 def is_version_tag_only(change: dict[str, Any], version_tag_name: str) -> bool:
     """Return true when an update changes only the configured tag fields."""
+    return is_ignored_tag_only(change, {version_tag_name})
+
+
+def is_ignored_tag_only(change: dict[str, Any], ignored_tag_names: set[str]) -> bool:
+    """Return true when an update changes only ignored tag fields."""
     change_body = change.get("change", {})
     if change_body.get("actions") != ["update"]:
         return False
@@ -117,8 +147,8 @@ def is_version_tag_only(change: dict[str, Any], version_tag_name: str) -> bool:
     if before == after:
         return False
 
-    return strip_version_tag(before, version_tag_name) == strip_version_tag(
-        after, version_tag_name
+    return strip_ignored_tags(before, ignored_tag_names) == strip_ignored_tags(
+        after, ignored_tag_names
     )
 
 
@@ -132,38 +162,50 @@ def markdown_row(values: list[str]) -> str:
 
 
 def render_summary(
-    plan: dict[str, Any], version_tag_name: str = "Version", max_changed_fields: int = 8
+    plan: dict[str, Any],
+    version_tag_name: str = "Version",
+    max_changed_fields: int = 8,
+    *,
+    ignored_tag_names: list[str] | None = None,
+    filter_tag_only_changes: bool = True,
+    summary_title: str = "Terraform plan summary",
 ) -> str:
     """Render the Terraform summary Markdown."""
+    ignored_tag_names = ignored_tag_names or [version_tag_name]
+    ignored_tag_name_set = set(ignored_tag_names)
     changes = [
         change
         for change in plan.get("resource_changes", [])
         if is_actionable(change)
     ]
     filtered = [
-        change for change in changes if is_version_tag_only(change, version_tag_name)
+        change
+        for change in changes
+        if filter_tag_only_changes and is_ignored_tag_only(change, ignored_tag_name_set)
     ]
     visible = [
         change
         for change in changes
-        if not is_version_tag_only(change, version_tag_name)
+        if not (
+            filter_tag_only_changes and is_ignored_tag_only(change, ignored_tag_name_set)
+        )
     ]
+    ignored_tag_label = ", ".join(ignored_tag_names)
 
     lines = [
-        "### Terraform plan summary",
+        f"### {summary_title}",
         "",
         "| Field | Count |",
         "|---|---:|",
         f"| Resource changes | {len(changes)} |",
-        f"| Filtered {version_tag_name} tag-only changes | {len(filtered)} |",
+        f"| Filtered tag-only changes ({ignored_tag_label}) | {len(filtered)} |",
         f"| Changes shown below | {len(visible)} |",
         "",
     ]
 
     if not visible:
         lines.append(
-            "No material resource changes after filtering "
-            f"{version_tag_name} tag-only updates."
+            "No material resource changes after applying the configured filters."
         )
         return "\n".join(lines) + "\n"
 
@@ -176,8 +218,8 @@ def render_summary(
 
     for change in visible:
         change_body = change.get("change", {})
-        before = strip_version_tag(change_body.get("before"), version_tag_name)
-        after = strip_version_tag(change_body.get("after"), version_tag_name)
+        before = strip_ignored_tags(change_body.get("before"), ignored_tag_name_set)
+        after = strip_ignored_tags(change_body.get("after"), ignored_tag_name_set)
 
         lines.append(
             markdown_row(
@@ -207,11 +249,19 @@ def append_summary(path: Path, summary: str) -> None:
 
 def main() -> None:
     plan_json_path = Path(os.environ["PLAN_JSON_PATH"])
-    version_tag_name = os.environ.get("VERSION_TAG_NAME") or "Version"
+    ignored_tag_names = ignored_tag_names_from_env()
+    filter_tag_only_changes = env_bool("FILTER_TAG_ONLY_CHANGES", True)
     max_changed_fields = env_int("MAX_CHANGED_FIELDS", 8)
+    summary_title = os.environ.get("SUMMARY_TITLE") or "Terraform plan summary"
 
     plan = json.loads(plan_json_path.read_text(encoding="utf-8"))
-    summary = render_summary(plan, version_tag_name, max_changed_fields)
+    summary = render_summary(
+        plan,
+        max_changed_fields=max_changed_fields,
+        ignored_tag_names=ignored_tag_names,
+        filter_tag_only_changes=filter_tag_only_changes,
+        summary_title=summary_title,
+    )
 
     summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
     append_summary(summary_path, summary)

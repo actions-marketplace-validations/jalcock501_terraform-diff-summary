@@ -103,6 +103,7 @@ jobs:
         uses: ./
         with:
           plan-json-path: ${{ runner.temp }}/tfplan.json
+          ignored-tag-names: Version
           max-changed-fields: "8"
           summary-output-path: ${{ runner.temp }}/action-summary.md
 
@@ -110,7 +111,7 @@ jobs:
         run: |
           test -f "$RUNNER_TEMP/action-summary.md"
           grep -F "| Resource changes | 2 |" "$RUNNER_TEMP/action-summary.md"
-          grep -F "| Filtered Version tag-only changes | 1 |" "$RUNNER_TEMP/action-summary.md"
+          grep -F "| Filtered tag-only changes (Version) | 1 |" "$RUNNER_TEMP/action-summary.md"
           grep -F "| Changes shown below | 1 |" "$RUNNER_TEMP/action-summary.md"
           grep -F '`aws_s3_bucket.material`' "$RUNNER_TEMP/action-summary.md"
           grep -F '`bucket, tags.Name`' "$RUNNER_TEMP/action-summary.md"

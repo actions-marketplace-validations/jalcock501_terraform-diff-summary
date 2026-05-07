@@ -3,9 +3,10 @@
 A small GitHub Action that writes a compact Terraform plan summary to the
 GitHub Step Summary.
 
-It is useful when release/version tags make Terraform plans noisy. By default,
-it filters out resource updates where the only effective change is
-`tags.Version` or `tags_all.Version`.
+It is useful when tags make Terraform plans noisy. By default, it filters out
+resource updates where the only effective change is `tags.Version` or
+`tags_all.Version`. You can configure one or more ignored tag names, disable
+tag-only filtering, and customize the summary heading.
 
 The summary deliberately shows changed field paths rather than before/after
 values, so it gives reviewers useful context without dumping potentially
@@ -24,6 +25,7 @@ sensitive Terraform values into the Step Summary.
   uses: your-org/terraform-diff-summary@v1
   with:
     plan-json-path: tfplan.json
+    ignored-tag-names: Version,Build
 ```
 
 ## Inputs
@@ -31,8 +33,11 @@ sensitive Terraform values into the Step Summary.
 | Name | Required | Default | Description |
 |---|---:|---|---|
 | `plan-json-path` | yes | n/a | JSON from `terraform show -json tfplan`. |
-| `version-tag-name` | no | `Version` | Tag key to ignore for tag-only changes. |
+| `version-tag-name` | no | `Version` | Legacy single ignored tag key. |
+| `ignored-tag-names` | no | n/a | Comma-separated tag keys to ignore. |
+| `filter-tag-only-changes` | no | `true` | Hide ignored-tag-only updates. |
 | `max-changed-fields` | no | `8` | Field path cap per resource before `...`. |
+| `summary-title` | no | `Terraform plan summary` | Markdown summary heading. |
 | `summary-output-path` | no | n/a | Also append Markdown to this file path. |
 
 ## Output
@@ -47,7 +52,7 @@ Example:
 | Field | Count |
 |---|---:|
 | Resource changes | 12 |
-| Filtered Version tag-only changes | 9 |
+| Filtered tag-only changes (Version, Build) | 9 |
 | Changes shown below | 3 |
 
 | Address | Action | Type | Changed fields |
@@ -67,8 +72,10 @@ Run the script directly:
 
 ```bash
 PLAN_JSON_PATH=tfplan.json \
-VERSION_TAG_NAME=Version \
+IGNORED_TAG_NAMES=Version,Build \
+FILTER_TAG_ONLY_CHANGES=true \
 MAX_CHANGED_FIELDS=8 \
+SUMMARY_TITLE="Terraform plan summary" \
 GITHUB_STEP_SUMMARY=/tmp/summary.md \
 python scripts/terraform_diff_summary.py
 ```

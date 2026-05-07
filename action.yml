@@ -10,13 +10,25 @@ inputs:
     description: Path to terraform show -json output
     required: true
   version-tag-name:
-    description: Tag key to ignore when detecting tag-only changes
+    description: Legacy single tag key to ignore when detecting tag-only changes
     required: false
     default: Version
+  ignored-tag-names:
+    description: Comma-separated tag keys to ignore for tag-only changes
+    required: false
+    default: ""
+  filter-tag-only-changes:
+    description: Whether to hide updates that only change ignored tag keys
+    required: false
+    default: "true"
   max-changed-fields:
     description: Max changed field paths shown per resource
     required: false
     default: "8"
+  summary-title:
+    description: Markdown heading text for the generated summary
+    required: false
+    default: Terraform plan summary
   summary-output-path:
     description: Optional path to also append the generated Markdown summary
     required: false
@@ -30,6 +42,9 @@ runs:
       env:
         PLAN_JSON_PATH: ${{ inputs.plan-json-path }}
         VERSION_TAG_NAME: ${{ inputs.version-tag-name }}
+        IGNORED_TAG_NAMES: ${{ inputs.ignored-tag-names }}
+        FILTER_TAG_ONLY_CHANGES: ${{ inputs.filter-tag-only-changes }}
         MAX_CHANGED_FIELDS: ${{ inputs.max-changed-fields }}
+        SUMMARY_TITLE: ${{ inputs.summary-title }}
         SUMMARY_OUTPUT_PATH: ${{ inputs.summary-output-path }}
       run: python "$GITHUB_ACTION_PATH/scripts/terraform_diff_summary.py"
