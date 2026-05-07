@@ -17,6 +17,10 @@ inputs:
     description: Max changed field paths shown per resource
     required: false
     default: "8"
+  summary-output-path:
+    description: Optional path to also append the generated Markdown summary
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -27,4 +31,5 @@ runs:
         PLAN_JSON_PATH: ${{ inputs.plan-json-path }}
         VERSION_TAG_NAME: ${{ inputs.version-tag-name }}
         MAX_CHANGED_FIELDS: ${{ inputs.max-changed-fields }}
+        SUMMARY_OUTPUT_PATH: ${{ inputs.summary-output-path }}
       run: python "$GITHUB_ACTION_PATH/scripts/terraform_diff_summary.py"

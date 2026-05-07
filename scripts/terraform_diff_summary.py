@@ -200,6 +200,11 @@ def env_int(name: str, default: int) -> int:
     return int(raw_value)
 
 
+def append_summary(path: Path, summary: str) -> None:
+    with path.open("a", encoding="utf-8") as summary_file:
+        summary_file.write(summary)
+
+
 def main() -> None:
     plan_json_path = Path(os.environ["PLAN_JSON_PATH"])
     version_tag_name = os.environ.get("VERSION_TAG_NAME") or "Version"
@@ -209,8 +214,11 @@ def main() -> None:
     summary = render_summary(plan, version_tag_name, max_changed_fields)
 
     summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
-    with summary_path.open("a", encoding="utf-8") as summary_file:
-        summary_file.write(summary)
+    append_summary(summary_path, summary)
+
+    summary_output_path = os.environ.get("SUMMARY_OUTPUT_PATH")
+    if summary_output_path:
+        append_summary(Path(summary_output_path), summary)
 
 
 if __name__ == "__main__":

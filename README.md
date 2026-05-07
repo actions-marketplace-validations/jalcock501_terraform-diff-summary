@@ -33,6 +33,7 @@ sensitive Terraform values into the Step Summary.
 | `plan-json-path` | yes | n/a | JSON from `terraform show -json tfplan`. |
 | `version-tag-name` | no | `Version` | Tag key to ignore for tag-only changes. |
 | `max-changed-fields` | no | `8` | Field path cap per resource before `...`. |
+| `summary-output-path` | no | n/a | Also append Markdown to this file path. |
 
 ## Output
 

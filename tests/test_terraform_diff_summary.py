@@ -150,3 +150,40 @@ def test_script_appends_summary_to_github_step_summary(tmp_path, monkeypatch):
     main()
 
     assert "`aws_s3_bucket.example`" in summary_path.read_text(encoding="utf-8")
+
+
+def test_script_can_append_summary_to_optional_output_path(tmp_path, monkeypatch):
+    plan_path = tmp_path / "tfplan.json"
+    step_summary_path = tmp_path / "step-summary.md"
+    output_summary_path = tmp_path / "output-summary.md"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "resource_changes": [
+                    resource_change(
+                        "aws_s3_bucket.example",
+                        "aws_s3_bucket",
+                        ["create"],
+                        None,
+                        {"bucket": "new"},
+                    )
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("PLAN_JSON_PATH", str(plan_path))
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary_path))
+    monkeypatch.setenv("SUMMARY_OUTPUT_PATH", str(output_summary_path))
+    monkeypatch.setenv("VERSION_TAG_NAME", "Version")
+    monkeypatch.setenv("MAX_CHANGED_FIELDS", "8")
+
+    main()
+
+    assert "`aws_s3_bucket.example`" in step_summary_path.read_text(
+        encoding="utf-8"
+    )
+    assert "`aws_s3_bucket.example`" in output_summary_path.read_text(
+        encoding="utf-8"
+    )

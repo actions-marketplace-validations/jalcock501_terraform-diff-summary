@@ -101,11 +101,10 @@ jobs:
 
       - name: Run local action
         uses: ./
-        env:
-          GITHUB_STEP_SUMMARY: ${{ runner.temp }}/action-summary.md
         with:
           plan-json-path: ${{ runner.temp }}/tfplan.json
           max-changed-fields: "8"
+          summary-output-path: ${{ runner.temp }}/action-summary.md
 
       - name: Assert action summary
         run: |
