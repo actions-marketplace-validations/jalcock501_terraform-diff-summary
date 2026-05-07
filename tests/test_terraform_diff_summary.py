@@ -6,9 +6,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from terraform_diff_summary import (  # noqa: E402
     changed_paths,
+    is_ignored_tag_only,
     is_version_tag_only,
     main,
     render_summary,
+    strip_ignored_tags,
     strip_version_tag,
 )
 
@@ -39,6 +41,18 @@ def test_strip_version_tag_removes_configured_tag_from_tags_and_tags_all():
     }
 
 
+def test_strip_ignored_tags_removes_multiple_configured_tags():
+    value = {
+        "tags": {"Name": "bucket", "Build": "123", "Version": "v1"},
+        "tags_all": {"Environment": "dev", "Build": "123", "Version": "v1"},
+    }
+
+    assert strip_ignored_tags(value, {"Build", "Version"}) == {
+        "tags": {"Name": "bucket"},
+        "tags_all": {"Environment": "dev"},
+    }
+
+
 def test_version_tag_only_update_is_filtered():
     change = resource_change(
         "aws_s3_bucket.example",
@@ -49,6 +63,18 @@ def test_version_tag_only_update_is_filtered():
     )
 
     assert is_version_tag_only(change, "Version")
+
+
+def test_multiple_ignored_tag_only_update_is_filtered():
+    change = resource_change(
+        "aws_s3_bucket.example",
+        "aws_s3_bucket",
+        ["update"],
+        {"tags": {"Name": "example", "Build": "1", "Version": "old"}},
+        {"tags": {"Name": "example", "Build": "2", "Version": "new"}},
+    )
+
+    assert is_ignored_tag_only(change, {"Build", "Version"})
 
 
 def test_update_with_other_changes_is_not_version_tag_only():
@@ -114,12 +140,40 @@ def test_render_summary_filters_version_only_changes_and_shows_changed_fields():
     summary = render_summary(plan, "Version", 8)
 
     assert "| Resource changes | 2 |" in summary
-    assert "| Filtered Version tag-only changes | 1 |" in summary
+    assert "| Filtered tag-only changes (Version) | 1 |" in summary
     assert "| Changes shown below | 1 |" in summary
     assert "`aws_s3_bucket.real_change`" in summary
     assert "`bucket, tags.Name`" in summary
     assert "aws_s3_bucket.version_only`" not in summary
     assert "aws_s3_bucket.noop`" not in summary
+
+
+def test_render_summary_can_disable_tag_only_filtering():
+    plan = {
+        "resource_changes": [
+            resource_change(
+                "aws_s3_bucket.version_only",
+                "aws_s3_bucket",
+                ["update"],
+                {"tags": {"Name": "same", "Version": "old"}},
+                {"tags": {"Name": "same", "Version": "new"}},
+            ),
+        ]
+    }
+
+    summary = render_summary(
+        plan,
+        "Version",
+        8,
+        filter_tag_only_changes=False,
+        summary_title="Custom Terraform summary",
+    )
+
+    assert "### Custom Terraform summary" in summary
+    assert "| Filtered tag-only changes (Version) | 0 |" in summary
+    assert "| Changes shown below | 1 |" in summary
+    assert "`aws_s3_bucket.version_only`" in summary
+    assert "`tags.Version`" in summary
 
 
 def test_script_appends_summary_to_github_step_summary(tmp_path, monkeypatch):
@@ -144,8 +198,11 @@ def test_script_appends_summary_to_github_step_summary(tmp_path, monkeypatch):
 
     monkeypatch.setenv("PLAN_JSON_PATH", str(plan_path))
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_path))
-    monkeypatch.setenv("VERSION_TAG_NAME", "Version")
+    monkeypatch.setenv("IGNORED_TAG_NAMES", "Version")
+    monkeypatch.delenv("VERSION_TAG_NAME", raising=False)
+    monkeypatch.setenv("FILTER_TAG_ONLY_CHANGES", "true")
     monkeypatch.setenv("MAX_CHANGED_FIELDS", "8")
+    monkeypatch.setenv("SUMMARY_TITLE", "Terraform plan summary")
 
     main()
 
@@ -176,7 +233,8 @@ def test_script_can_append_summary_to_optional_output_path(tmp_path, monkeypatch
     monkeypatch.setenv("PLAN_JSON_PATH", str(plan_path))
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary_path))
     monkeypatch.setenv("SUMMARY_OUTPUT_PATH", str(output_summary_path))
-    monkeypatch.setenv("VERSION_TAG_NAME", "Version")
+    monkeypatch.setenv("IGNORED_TAG_NAMES", "Version")
+    monkeypatch.setenv("FILTER_TAG_ONLY_CHANGES", "true")
     monkeypatch.setenv("MAX_CHANGED_FIELDS", "8")
 
     main()
