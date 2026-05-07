@@ -173,6 +173,7 @@ def test_render_summary_can_disable_tag_only_filtering():
     assert "| Filtered tag-only changes (Version) | 0 |" in summary
     assert "| Changes shown below | 1 |" in summary
     assert "`aws_s3_bucket.version_only`" in summary
+    assert "`tags.Version`" in summary
 
 
 def test_script_appends_summary_to_github_step_summary(tmp_path, monkeypatch):

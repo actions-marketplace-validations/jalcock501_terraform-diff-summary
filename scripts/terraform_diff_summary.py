@@ -127,6 +127,22 @@ def changed_paths(before: Any, after: Any, max_changed_fields: int) -> str:
     return ", ".join(changed)
 
 
+def display_changed_paths(
+    before: Any,
+    after: Any,
+    ignored_tag_names: set[str],
+    max_changed_fields: int,
+    *,
+    hide_ignored_tags: bool,
+) -> str:
+    if not hide_ignored_tags:
+        return changed_paths(before, after, max_changed_fields)
+
+    stripped_before = strip_ignored_tags(before, ignored_tag_names)
+    stripped_after = strip_ignored_tags(after, ignored_tag_names)
+    return changed_paths(stripped_before, stripped_after, max_changed_fields)
+
+
 def is_actionable(change: dict[str, Any]) -> bool:
     return change.get("change", {}).get("actions") != ["no-op"]
 
@@ -218,8 +234,15 @@ def render_summary(
 
     for change in visible:
         change_body = change.get("change", {})
-        before = strip_ignored_tags(change_body.get("before"), ignored_tag_name_set)
-        after = strip_ignored_tags(change_body.get("after"), ignored_tag_name_set)
+        before = change_body.get("before")
+        after = change_body.get("after")
+        changed_fields = display_changed_paths(
+            before,
+            after,
+            ignored_tag_name_set,
+            max_changed_fields,
+            hide_ignored_tags=filter_tag_only_changes,
+        )
 
         lines.append(
             markdown_row(
@@ -227,7 +250,7 @@ def render_summary(
                     f"`{change.get('address', 'unknown')}`",
                     f"`{','.join(change_body.get('actions', []))}`",
                     f"`{change.get('type', 'unknown')}`",
-                    f"`{changed_paths(before, after, max_changed_fields)}`",
+                    f"`{changed_fields}`",
                 ]
             )
         )
